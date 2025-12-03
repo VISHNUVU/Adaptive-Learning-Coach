@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, Schema, Chat } from "@google/genai";
+import { GoogleGenAI, Type, Schema, Chat, Modality } from "@google/genai";
 import { LearningPillar, LessonPath, Curriculum, ChatMessage } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -109,13 +109,27 @@ export const generateLessonPaths = async (subject: string, pillar: string): Prom
 
 export const generateCurriculum = async (subject: string, pillar: string, path: string): Promise<Curriculum> => {
   const prompt = `
-    Create a detailed micro-curriculum for the lesson path: "${path}".
+    Create a detailed, deep-dive micro-curriculum for the lesson path: "${path}".
     Context: Subject is "${subject}", Pillar is "${pillar}".
     
+    The curriculum must be comprehensive, engaging, and easy to digest.
     Include:
-    1. 3-5 clear Learning Objectives.
-    2. 3-5 Key Concepts to master.
-    3. 3-5 Sub-lessons, where each has a title, content summary, and a practical action item (exercise).
+    1. A clear, engaging Introduction paragraph.
+    2. 3-5 clear Learning Objectives.
+    3. 3-5 Key Concepts to master.
+    4. 2-3 Real-world Use Cases (Why does this matter?).
+    5. A short, narrative Case Study (Title, Scenario, Outcome).
+    6. 3-5 Sub-lessons. Each MUST include:
+       - Title
+       - Brief Content Summary
+       - General Concepts: Detailed explanation of the core concepts (Markdown supported).
+       - Use Cases: 2-3 specific real-world scenarios/applications of this sub-lesson topic.
+       - Case Studies: 1-2 brief examples (1 sentence each) of companies or events relevant to this topic.
+       - References: 1-2 specific terms, books, or documentation to look up.
+       - Concrete Example: A specific real-world example or analogy.
+       - Visual Description: A highly detailed image generation prompt to visualize this concept (e.g., "A colorful diagram of the solar system with labels", "A close-up photograph of a computer motherboard", "An illustration of a neural network").
+       - Practical Action Item (exercise).
+    7. 3-4 Resources: Recommended books, search terms, or seminal papers for the whole path.
     
     Return ONLY JSON.
   `;
@@ -124,8 +138,19 @@ export const generateCurriculum = async (subject: string, pillar: string, path: 
     type: Type.OBJECT,
     properties: {
       pathTitle: { type: Type.STRING },
+      introduction: { type: Type.STRING },
       objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
       keyConcepts: { type: Type.ARRAY, items: { type: Type.STRING } },
+      realWorldUseCases: { type: Type.ARRAY, items: { type: Type.STRING } },
+      caseStudy: {
+        type: Type.OBJECT,
+        properties: {
+            title: { type: Type.STRING },
+            scenario: { type: Type.STRING },
+            outcome: { type: Type.STRING },
+        },
+        required: ["title", "scenario", "outcome"]
+      },
       subLessons: {
         type: Type.ARRAY,
         items: {
@@ -133,13 +158,20 @@ export const generateCurriculum = async (subject: string, pillar: string, path: 
           properties: {
             title: { type: Type.STRING },
             content: { type: Type.STRING },
+            generalConcepts: { type: Type.STRING },
+            useCases: { type: Type.ARRAY, items: { type: Type.STRING } },
+            caseStudies: { type: Type.ARRAY, items: { type: Type.STRING } },
+            references: { type: Type.ARRAY, items: { type: Type.STRING } },
+            example: { type: Type.STRING },
+            visualDescription: { type: Type.STRING },
             actionItem: { type: Type.STRING },
           },
-          required: ["title", "content", "actionItem"],
+          required: ["title", "content", "generalConcepts", "useCases", "caseStudies", "references", "example", "visualDescription", "actionItem"],
         },
       },
+      resources: { type: Type.ARRAY, items: { type: Type.STRING } },
     },
-    required: ["pathTitle", "objectives", "keyConcepts", "subLessons"],
+    required: ["pathTitle", "introduction", "objectives", "keyConcepts", "realWorldUseCases", "caseStudy", "subLessons", "resources"],
   };
 
   try {
@@ -157,6 +189,32 @@ export const generateCurriculum = async (subject: string, pillar: string, path: 
   } catch (error) {
     console.error("Error generating curriculum:", error);
     throw new Error("Failed to generate curriculum.");
+  }
+};
+
+export const generateModuleAudio = async (text: string): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (!base64Audio) {
+      throw new Error("No audio data generated.");
+    }
+    return base64Audio;
+  } catch (error) {
+    console.error("Audio generation error:", error);
+    throw error;
   }
 };
 
